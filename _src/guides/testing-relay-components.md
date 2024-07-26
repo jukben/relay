@@ -14,7 +14,7 @@ keywords:
 ---
 
 import DocsRating from '@site/src/core/DocsRating';
-import {FbInternalOnly, OssOnly} from 'internaldocs-fb-helpers';
+import {FbInternalOnly, OssOnly} from 'docusaurus-plugin-internaldocs-fb/internal';
 
 ## Abstract
 
@@ -252,7 +252,70 @@ test('Error State', () => {
 });
 ```
 
+#### Component Tests With Deferred Fragments
 
+When using `MockPayloadGenerator` to generate data for a Query that has fragments with `@defer` you may want to generate the deferred data as well. To do so, you can use `MockPayloadGenerator.generateWithDefer` passing the option `generateDeferredPayload`:
+
+```javascript
+// Say you have a component with useFragment
+const ChildComponent = (props: {user: ChildComponentFragment_user$key}) => {
+  const data = useFragment(graphql`
+  fragment ChildComponentFragment_user on User {
+    name
+  }
+  `, props.user);
+  return <View>{data?.name}</View>;
+};
+
+// Say you have a parent component that fetches data with useLazyLoadQuery and `@defer`s the data for the ChildComponent.
+const ParentComponent = () => {
+  const data = useLazyLoadQuery(graphql`
+  query ParentComponentQuery {
+    user {
+      id
+      ...ChildComponentFragment_user @defer
+    }
+  }
+  `, {});
+  return (
+    <View>
+      {id}
+      <Suspense fallback={null}>
+        {data?.user && <ChildComponent user={data.user} />}
+      </Suspense>
+    </View>
+  );
+};
+
+const {
+  createMockEnvironment,
+  MockPayloadGenerator,
+} = require('relay-test-utils');
+
+test('Data Render with @defer', () => {
+  const environment = createMockEnvironment();
+  const renderer = ReactTestRenderer.create(
+    <RelayEnvironmentProvider environment={environment}>
+      <ParentComponent />,
+    </RelayEnvironmentProvider>
+  );
+
+  // Wrapping in ReactTestRenderer.act will ensure that components
+  // are fully updated to their final state.
+  ReactTestRenderer.act(() => {
+    const operation = environment.mock.getMostRecentOperation();
+    const mockData = MockPayloadGenerator.generateWithDefer(operation, null, {generateDeferredPayload: true});
+    environment.mock.resolve(mockData);
+
+    // You may need this to make sure all payloads are retrieved
+    jest.runAllTimers();
+  });
+
+  // At this point operation will be resolved
+  // and the data for a query will be available in the store
+  expect(renderer.toJSON()).toEqual(['id', 'name']);
+});
+```
 
 ### Fragment Component Tests
 
@@ -556,7 +619,7 @@ test('Error State', () => {
 
 The examples in this guide should work for testing components both with Relay Hooks, Containers or Renderers. When writing tests that involve the `usePreloadedQuery` hook, please also see the `queuePendingOperation` note above.
 
-### toMatchSnaphot(...)
+### toMatchSnapshot(...)
 
 Even though in all of the examples here you can see assertions with `toMatchSnapshot()`, we keep it that way just to make examples concise. But it's not the recommended way to test your components.
 
