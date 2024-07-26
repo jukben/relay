@@ -26,7 +26,7 @@ const {
 } = require('relay-runtime');
 const {createMockEnvironment} = require('relay-test-utils');
 
-const {useMemo} = React;
+const {useMemo, useCallback} = React;
 
 describe('useRefetchableFragment', () => {
   let environment;
@@ -37,6 +37,7 @@ describe('useRefetchableFragment', () => {
   let renderFragment;
   let renderSpy;
   let Renderer;
+  const fetched: Array<string> = [];
 
   function useRefetchableFragment(fragmentNode: any, fragmentRef: any) {
     const [data, refetch] = useRefetchableFragmentOriginal(
@@ -146,8 +147,33 @@ describe('useRefetchableFragment', () => {
         [],
       );
 
-      const [userData] = useRefetchableFragment(gqlFragment, artificialUserRef);
-      return <Renderer user={userData} />;
+      const [userData, refetch] = useRefetchableFragment(
+        gqlFragment,
+        artificialUserRef,
+      );
+
+      const handleRefetch = useCallback(() => {
+        return new Promise(resolve => {
+          const requestId = Math.random().toString(36).substring(2, 9);
+
+          refetch(
+            {},
+            {
+              onComplete: error => {
+                fetched.push(requestId);
+                resolve(requestId);
+              },
+            },
+          );
+        });
+      }, [refetch]);
+
+      return (
+        <div>
+          <button onClick={handleRefetch}>Refetch</button>
+          <Renderer user={userData} />;
+        </div>
+      );
     };
 
     const ContextProvider = ({children}: {children: React.Node}) => {
@@ -200,5 +226,31 @@ describe('useRefetchableFragment', () => {
         },
       },
     ]);
+  });
+
+  it('should handle refetch when the button is clicked', () => {
+    const testInstance = renderFragment();
+    expectFragmentResults([
+      {
+        data: {
+          id: '1',
+          name: 'Alice',
+          profile_picture: null,
+          ...createFragmentRef('1', query),
+        },
+      },
+    ]);
+
+    const buttonInstance = testInstance.root.findByType('button');
+
+    TestRenderer.act(() => {
+      buttonInstance.props.onClick();
+    });
+
+    TestRenderer.act(() => {
+      buttonInstance.props.onClick();
+    });
+
+    expect(new Set(fetched).size).toEqual(2);
   });
 });
